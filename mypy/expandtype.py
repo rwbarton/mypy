@@ -75,7 +75,9 @@ class ExpandTypeVisitor(TypeVisitor[Type]):
 
     def visit_callable_type(self, t: CallableType) -> Type:
         return t.copy_modified(arg_types=self.expand_types(t.arg_types),
-                               ret_type=t.ret_type.accept(self))
+                               ret_type=t.ret_type.accept(self),
+                               variables=[var for var in t.variables
+                                          if var.id not in self.variables])
 
     def visit_overloaded(self, t: Overloaded) -> Type:
         items = []  # type: List[CallableType]

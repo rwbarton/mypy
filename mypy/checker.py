@@ -30,7 +30,8 @@ from mypy import nodes
 from mypy.types import (
     Type, AnyType, CallableType, Void, FunctionLike, Overloaded, TupleType,
     Instance, NoneTyp, ErrorType, strip_type,
-    UnionType, TypeVarType, PartialType, DeletedType
+    UnionType, TypeVarType, PartialType, DeletedType,
+    TypeQuery, ANY_TYPE_STRATEGY
 )
 from mypy.sametypes import is_same_type
 from mypy.messages import MessageBuilder
@@ -353,6 +354,9 @@ class TypeChecker(NodeVisitor[Type]):
     dynamic_funcs = None  # type: List[bool]
     # Stack of functions being type checked
     function_stack = None  # type: List[FuncItem]
+    # Bound type variables (type parameters of surrounding generic
+    # classes and functions)
+    bound_tvars = set()  # type: Set[int]
     # Set to True on return/break/raise, False on blocks that can block any of them
     breaking_out = False
     # Do weak type checking in this file
@@ -396,6 +400,7 @@ class TypeChecker(NodeVisitor[Type]):
         self.type_context = []
         self.dynamic_funcs = []
         self.function_stack = []
+        self.bound_tvars = set()  # type: Set[int]
         self.weak_opts = set()  # type: Set[str]
         self.partial_types = []
         self.deferred_nodes = []
@@ -458,6 +463,10 @@ class TypeChecker(NodeVisitor[Type]):
         self.type_context.append(type_context)
         try:
             typ = node.accept(self)
+            if not only_has_type_vars(typ, self.bound_tvars):
+                # This is really an internal mypy error, not a type error.
+                # But it's more convenient to let mypy continue...
+                self.fail('Unexpected free type variable in {}'.format(typ), node)
         except Exception as err:
             report_internal_error(err, self.errors.file, node.line)
         self.type_context.pop()
@@ -648,6 +657,7 @@ class TypeChecker(NodeVisitor[Type]):
             old_binder = self.binder
             self.binder = ConditionalTypeBinder()
             self.binder.push_frame()
+            self.bound_tvars |= set(typ.type_var_ids())
             defn.expanded.append(item)
 
             # We may be checking a function definition or an anonymous
@@ -740,6 +750,7 @@ class TypeChecker(NodeVisitor[Type]):
 
             self.return_types.pop()
 
+            self.bound_tvars -= set(typ.type_var_ids())
             self.binder = old_binder
 
     def check_reverse_op_method(self, defn: FuncItem, typ: CallableType,
@@ -1034,7 +1045,9 @@ class TypeChecker(NodeVisitor[Type]):
         old_binder = self.binder
         self.binder = ConditionalTypeBinder()
         self.binder.push_frame()
+        self.bound_tvars |= set(tv.id for tv in defn.type_vars)
         self.accept(defn.defs)
+        self.bound_tvars -= set(tv.id for tv in defn.type_vars)
         self.binder = old_binder
         self.check_multiple_inheritance(typ)
         self.leave_partial_types()
@@ -2549,3 +2562,25 @@ def is_valid_inferred_type(typ: Type) -> bool:
             if not is_valid_inferred_type(item):
                 return False
     return True
+
+
+def only_has_type_vars(typ: Type, allowed_tvars: Set[int]) -> bool:
+    if typ is None:
+        return True
+    return not typ.accept(UnboundTypeVarVisitor(allowed_tvars))
+
+
+class UnboundTypeVarVisitor(TypeQuery):
+    allowed_tvars = set()  # type: Set[int]
+
+    def __init__(self, allowed_tvars: Set[int]) -> None:
+        super().__init__(False, ANY_TYPE_STRATEGY)
+        self.allowed_tvars = allowed_tvars
+
+    def visit_type_var(self, t: TypeVarType) -> bool:
+        return t.id not in self.allowed_tvars
+
+    def visit_callable_type(self, t: CallableType) -> bool:
+        # Bind the generic type variables of t
+        new_visitor = UnboundTypeVarVisitor(self.allowed_tvars | set(t.type_var_ids()))
+        return new_visitor.query_types(t.arg_types + [t.ret_type])
