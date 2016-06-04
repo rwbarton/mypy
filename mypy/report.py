@@ -2,11 +2,12 @@
 
 from abc import ABCMeta, abstractmethod
 import cgi
+import json
 import os
 import shutil
 import tokenize
 
-from typing import Callable, Dict, List, Tuple, cast
+from typing import Callable, Dict, List, Optional, Tuple, cast
 
 from mypy.nodes import MypyFile, Node, FuncDef
 from mypy import stats
@@ -101,6 +102,93 @@ class LineCountReporter(AbstractReporter):
                     c[0], c[1], c[2], c[3], p))
 
 reporter_classes['linecount'] = LineCountReporter
+
+
+class LineCoverageVisitor(TraverserVisitor):
+    def __init__(self, source: List[str]) -> None:
+        self.source = source
+        # Everything is covered at indentation level -1 (top-level).
+        self.lines_covered = [(-1, True) for l in source]
+
+    def indentation_level(self, line_number: int) -> Optional[int]:
+        """Return the indentation of a line of the source.
+        Returns None for blank lines or comments."""
+        line = self.source[line_number]
+        indent = 0
+        for char in list(line):
+            if char == ' ':
+                indent += 1
+            elif char == '\t':
+                indent = 8 * ((indent + 8) // 8)
+            elif char == '#':
+                # Line is a comment; ignore it
+                return None
+            elif char == '\n':
+                # Line is entirely whitespace; ignore it
+                return None
+            # TODO line continuation (\)
+            else:
+                # Found a non-whitespace character
+                return indent
+        # Line is entirely whitespace (and at end of file with no trailing newline); ignore it
+        return None
+
+    def visit_func_def(self, defn: FuncDef) -> None:
+        start_line = defn.get_line() - 1
+        start_indent = self.indentation_level(start_line)
+        cur_line = start_line + 1
+        end_line = cur_line
+        # After this loop, function body will be lines [start_line, end_line)
+        while cur_line < len(self.source):
+            cur_indent = self.indentation_level(cur_line)
+            if cur_indent is None:
+                # Consume the line, but don't mark it as belonging to the function yet.
+                cur_line += 1
+            elif cur_indent > start_indent:
+                # A non-blank line that belongs to the function.
+                cur_line += 1
+                end_line = cur_line
+            else:
+                # We reached a line outside the function definition.
+                break
+
+        is_typed = defn.type is not None
+        for line in range(start_line, end_line):
+            old_indent, _ = self.lines_covered[line]
+            assert start_indent > old_indent
+            self.lines_covered[line] = (start_indent, is_typed)
+
+        # Visit the body, in case there are nested functions
+        super().visit_func_def(defn)
+
+
+class LineCoverageReporter(AbstractReporter):
+    def __init__(self, reports: Reports, output_dir: str) -> None:
+        super().__init__(reports, output_dir)
+        self.lines_covered = {}  # type: Dict[str, List[int]]
+
+        stats.ensure_dir_exists(output_dir)
+
+    def on_file(self, tree: MypyFile, type_map: Dict[Node, Type]) -> None:
+        tree_source = open(tree.path).readlines()
+
+        coverage_visitor = LineCoverageVisitor(tree_source)
+        tree.accept(coverage_visitor)
+
+        covered_lines = []
+        for line_number, (_, typed) in enumerate(coverage_visitor.lines_covered):
+            if typed:
+                covered_lines.append(line_number + 1)
+
+        self.lines_covered[os.path.abspath(tree.path)] = covered_lines
+
+    def on_finish(self) -> None:
+        COVERAGE_MAGIC = "!coverage.py: This is a private format, don't read it directly!"
+        with open(os.path.join(self.output_dir, 'coverage.txt'), 'w') as f:
+            f.write(COVERAGE_MAGIC)
+            json.dump({'lines': self.lines_covered}, f)
+
+reporter_classes['linecoverage'] = LineCoverageReporter
 
 
 class OldHtmlReporter(AbstractReporter):
