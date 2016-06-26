@@ -1090,7 +1090,7 @@ class ExpressionChecker:
         else:
             right_map = None
 
-        with self.chk.binder.frame_context():
+        with self.chk.binder.frame_context(can_skip=True, fall_through=0):
             if right_map:
                 for var, type in right_map.items():
                     self.chk.binder.push(var, type)
@@ -1488,7 +1488,7 @@ class ExpressionChecker:
         """Check the for_comp part of comprehensions. That is the part from 'for':
         ... for x in y if z
         """
-        with self.chk.binder.frame_context():
+        with self.chk.binder.frame_context(can_skip=True, fall_through=0):
             for index, sequence, conditions in zip(e.indices, e.sequences,
                                                    e.condlists):
                 sequence_type = self.chk.analyze_iterable_item_type(sequence)
@@ -1533,7 +1533,7 @@ class ExpressionChecker:
 
     def analyze_cond_branch(self, map: Optional[Dict[Node, Type]],
                             node: Node, context: Optional[Type]) -> Type:
-        with self.chk.binder.frame_context():
+        with self.chk.binder.frame_context(can_skip=True, fall_through=0):
             if map:
                 for var, type in map.items():
                     self.chk.binder.push(var, type)
