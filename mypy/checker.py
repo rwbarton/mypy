@@ -226,8 +226,10 @@ class TypeChecker(NodeVisitor[Type]):
         else:
             return typ
 
-    def accept_loop(self, body: Node, else_body: Node = None) -> Type:
+    def accept_loop(self, body: Node, else_body: Node = None, *,
+                    exit_condition: Node = None) -> Type:
         """Repeatedly type check a loop body until the frame doesn't change.
+        If exit_condition is set, assume it must be False on exit from the loop.
 
         Then check the else_body.
         """
@@ -240,6 +242,13 @@ class TypeChecker(NodeVisitor[Type]):
                 if not self.binder.last_pop_changed:
                     break
             self.binder.pop_loop_frame()
+            if exit_condition:
+                _, else_map = find_isinstance_check(
+                    exit_condition, self.type_map, self.typing_mode_weak()
+                )
+                if else_map:
+                    for var, type in else_map.items():
+                        self.binder.push(var, type)
             if else_body:
                 self.accept(else_body)
 
@@ -1465,7 +1474,8 @@ class TypeChecker(NodeVisitor[Type]):
 
     def visit_while_stmt(self, s: WhileStmt) -> Type:
         """Type check a while statement."""
-        self.accept_loop(IfStmt([s.expr], [s.body], None), s.else_body)
+        self.accept_loop(IfStmt([s.expr], [s.body], None), s.else_body,
+                         exit_condition=s.expr)
 
     def visit_operator_assignment_stmt(self,
                                        s: OperatorAssignmentStmt) -> Type:
