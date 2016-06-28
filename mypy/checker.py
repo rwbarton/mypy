@@ -246,7 +246,9 @@ class TypeChecker(NodeVisitor[Type]):
                 _, else_map = find_isinstance_check(
                     exit_condition, self.type_map, self.typing_mode_weak()
                 )
-                if else_map:
+                if else_map is None:
+                    self.binder.unreachable()
+                else:
                     for var, type in else_map.items():
                         self.binder.push(var, type)
             if else_body:
@@ -1500,7 +1502,9 @@ class TypeChecker(NodeVisitor[Type]):
             self.typing_mode_weak()
         )
 
-        if true_map:
+        if true_map is None:
+            self.binder.unreachable()
+        else:
             for var, type in true_map.items():
                 self.binder.push(var, type)
 
@@ -2183,6 +2187,16 @@ def conditional_type_map(expr: Node,
             return {}, {}
 
 
+def is_true_literal(n: Node) -> bool:
+    return (refers_to_fullname(n, 'builtins.True')
+            or isinstance(n, IntExpr) and n.value == 1)
+
+
+def is_false_literal(n: Node) -> bool:
+    return (refers_to_fullname(n, 'builtins.False')
+            or isinstance(n, IntExpr) and n.value == 0)
+
+
 def is_literal_none(n: Node) -> bool:
     return isinstance(n, NameExpr) and n.fullname == 'builtins.None'
 
@@ -2246,7 +2260,11 @@ def find_isinstance_check(node: Node,
 
     Guaranteed to not return None, None. (But may return {}, {})
     """
-    if isinstance(node, CallExpr):
+    if is_true_literal(node):
+        return {}, None
+    elif is_false_literal(node):
+        return None, {}
+    elif isinstance(node, CallExpr):
         if refers_to_fullname(node.callee, 'builtins.isinstance'):
             expr = node.args[0]
             if expr.literal == LITERAL_TYPE:
