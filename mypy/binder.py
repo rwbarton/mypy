@@ -1,15 +1,15 @@
-from typing import (Any, Dict, List, Set, Iterator)
+from typing import (Dict, List, Set, Iterator)
 from contextlib import contextmanager
 
 from mypy.types import Type, AnyType, PartialType
-from mypy.nodes import (Node, Var)
+from mypy.nodes import (Key, Node, Var, RefExpr)
 
 from mypy.subtypes import is_subtype
 from mypy.join import join_simple
 from mypy.sametypes import is_same_type
 
 
-class Frame(Dict[Any, Type]):
+class Frame(Dict[Key, Type]):
     """A Frame represents a specific point in the execution of a program.
     It carries information about the current types of expressions at
     that point, arising either from assignments to those expressions
@@ -23,10 +23,6 @@ class Frame(Dict[Any, Type]):
 
     def __init__(self) -> None:
         self.unreachable = False
-
-
-class Key(AnyType):
-    pass
 
 
 class ConditionalTypeBinder:
@@ -84,8 +80,8 @@ class ConditionalTypeBinder:
             value = key
         else:
             self.dependencies.setdefault(key, set()).add(value)
-        if isinstance(key, tuple):
-            for elt in key:
+        for elt in key:
+            if isinstance(elt, Key):
                 self._add_dependencies(elt, value)
 
     def push_frame(self) -> Frame:
@@ -190,8 +186,8 @@ class ConditionalTypeBinder:
 
         return result
 
-    def get_declaration(self, expr: Any) -> Type:
-        if hasattr(expr, 'node') and isinstance(expr.node, Var):
+    def get_declaration(self, expr: Node) -> Type:
+        if isinstance(expr, RefExpr) and isinstance(expr.node, Var):
             type = expr.node.type
             if isinstance(type, PartialType):
                 return None
