@@ -165,7 +165,7 @@ x + 'a'
 [case testWeakConditionalChanges]
 # mypy: weak
 def f():
-    if 1:
+    if bool():
         x = 1
         x + 1
         x + 'a' # E: Unsupported operand types for + ("int" and "str")
@@ -177,11 +177,11 @@ def f():
     x + 'a'
 def g():
     x = 1
-    if 1:
+    if bool():
         x = 1
     else:
         x = 'a'
-    if 1:
+    if bool():
         return
     x + 'a'
 [builtins fixtures/ops.py]
@@ -213,17 +213,18 @@ f(*args, y=2)
 
 # I couldn't come up with a simple example, but this showed a bug in
 # binders.
-if 1:
-    if 1:
+if bool():
+    if bool():
         pass
-if 1:
+if bool():
     z = ''
     pat = 1
     pat() # E: "int" not callable
 pat()
 pat = ''
 pat()  # E: "str" not callable
-while 1:
+while bool():
     pass
 pat() # E: "str" not callable
+[builtins fixtures/bool.py]
 [out]

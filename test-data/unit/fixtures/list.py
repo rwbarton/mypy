@@ -25,3 +25,4 @@ class tuple: pass
 class function: pass
 class int: pass
 class str: pass
+class bool: pass
