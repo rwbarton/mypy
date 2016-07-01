@@ -562,24 +562,24 @@ class MessageBuilder:
             self.fail('{} does not return a value'.format(
                 capitalize((cast(Void, void_type)).source)), context)
 
-    def deleted_as_rvalue(self, typ: DeletedType, context: Context) -> None:
+    def deleted_as_rvalue(self, source: str, context: Context) -> None:
         """Report an error about using an deleted type as an rvalue."""
-        if typ.source is None:
+        if source is None:
             s = ""
         else:
-            s = " '{}'".format(typ.source)
+            s = " '{}'".format(source)
         self.fail('Trying to read deleted variable{}'.format(s), context)
 
-    def deleted_as_lvalue(self, typ: DeletedType, context: Context) -> None:
+    def deleted_as_lvalue(self, source: str, context: Context) -> None:
         """Report an error about using an deleted type as an lvalue.
 
         Currently, this only occurs when trying to assign to an
         exception variable outside the local except: blocks.
         """
-        if typ.source is None:
+        if source is None:
             s = ""
         else:
-            s = " '{}'".format(typ.source)
+            s = " '{}'".format(source)
         self.fail('Assignment to variable{} outside except: block'.format(s), context)
 
     def no_variant_matches_arguments(self, overload: Overloaded, arg_types: List[Type],

@@ -52,7 +52,7 @@ from mypy.visitor import NodeVisitor
 from mypy.join import join_types
 from mypy.treetransform import TransformVisitor
 from mypy.meet import meet_simple, nearest_builtin_ancestor, is_overlapping_types
-from mypy.binder import ConditionalTypeBinder
+from mypy.binder import ConditionalTypeBinder, Deleted
 
 from mypy import experiments
 
@@ -972,6 +972,7 @@ class TypeChecker(NodeVisitor[Type]):
                                                       infer_lvalue_type)
         else:
             lvalue_type, index_lvalue, inferred = self.check_lvalue(lvalue)
+            self.binder.not_deleted(lvalue)
             if lvalue_type:
                 if isinstance(lvalue_type, PartialType) and lvalue_type.type is None:
                     # Try to infer a proper type for a variable with a partial None type.
@@ -1211,6 +1212,10 @@ class TypeChecker(NodeVisitor[Type]):
             self.store_type(lvalue, lvalue_type)
         elif isinstance(lvalue, NameExpr):
             lvalue_type = self.expr_checker.analyze_ref_expr(lvalue, lvalue=True)
+            binder_type = self.binder.get(lvalue)
+            if isinstance(binder_type, Deleted) and binder_type.as_lvalue:
+                self.msg.deleted_as_lvalue(binder_type.source, lvalue)
+                lvalue_type = AnyType()  # Don't produce a subsequent type error also.
             self.store_type(lvalue, lvalue_type)
         elif isinstance(lvalue, TupleExpr) or isinstance(lvalue, ListExpr):
             lv = cast(Union[TupleExpr, ListExpr], lvalue)
@@ -1246,8 +1251,6 @@ class TypeChecker(NodeVisitor[Type]):
         elif isinstance(init_type, Void):
             self.check_not_void(init_type, context)
             self.set_inference_error_fallback_type(name, lvalue, init_type, context)
-        elif isinstance(init_type, DeletedType):
-            self.msg.deleted_as_rvalue(init_type, context)
         elif not is_valid_inferred_type(init_type):
             # We cannot use the type of the initialization expression for full type
             # inference (it's not specific enough), but we might be able to give
@@ -1312,6 +1315,10 @@ class TypeChecker(NodeVisitor[Type]):
         if expr.literal >= LITERAL_TYPE:
             restriction = self.binder.get(expr)
             if restriction:
+                if isinstance(restriction, Deleted):
+                    self.msg.deleted_as_rvalue(restriction.source, expr)
+                    return AnyType()  # Don't produce a subsequent type error also.
+
                 ans = meet_simple(known_type, restriction)
                 return ans
         return known_type
@@ -1326,16 +1333,11 @@ class TypeChecker(NodeVisitor[Type]):
             return AnyType()
         else:
             rvalue_type = self.accept(rvalue, lvalue_type)
-            if isinstance(rvalue_type, DeletedType):
-                self.msg.deleted_as_rvalue(rvalue_type, context)
             if self.typing_mode_weak():
                 return rvalue_type
-            if isinstance(lvalue_type, DeletedType):
-                self.msg.deleted_as_lvalue(lvalue_type, context)
-            else:
-                self.check_subtype(rvalue_type, lvalue_type, context, msg,
-                                   '{} has type'.format(rvalue_name),
-                                   '{} has type'.format(lvalue_name))
+            self.check_subtype(rvalue_type, lvalue_type, context, msg,
+                               '{} has type'.format(rvalue_name),
+                               '{} has type'.format(lvalue_name))
             return rvalue_type
 
     def check_indexed_assignment(self, lvalue: IndexExpr,
@@ -1597,6 +1599,7 @@ class TypeChecker(NodeVisitor[Type]):
                                 # causing assignment to set the variable's type.
                                 s.vars[i].is_def = True
                                 self.check_assignment(s.vars[i], self.temp_node(t, s.vars[i]))
+                                self.binder.push(s.vars[i], t)
                         self.accept(s.handlers[i])
                         if s.vars[i]:
                             # Exception variables are deleted in python 3 but not python 2.
@@ -1611,9 +1614,10 @@ class TypeChecker(NodeVisitor[Type]):
                                 source = ('(exception variable "{}", which we do not '
                                           'accept outside except: blocks even in '
                                           'python 2)'.format(s.vars[i].name))
-                            var = cast(Var, s.vars[i].node)
-                            var.type = DeletedType(source=source)
-                            self.binder.cleanse(s.vars[i])
+                            self.binder.assign_type(s.vars[i],
+                                                    Deleted(source=source, as_lvalue=True),
+                                                    self.binder.get_declaration(s.vars[i]),
+                                                    self.typing_mode_weak())
             if s.else_body:
                 self.accept(s.else_body)
 
@@ -1711,7 +1715,7 @@ class TypeChecker(NodeVisitor[Type]):
             for elt in flatten(s.expr):
                 if isinstance(elt, NameExpr):
                     self.binder.assign_type(elt,
-                                            DeletedType(source=elt.name),
+                                            Deleted(source=elt.name),
                                             self.binder.get_declaration(elt),
                                             self.typing_mode_weak())
             return None

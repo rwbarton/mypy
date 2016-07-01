@@ -121,12 +121,7 @@ class ExpressionChecker:
             # Implicit 'Any' type.
             return AnyType()
         else:
-            # Look up local type of variable with type (inferred or explicit).
-            val = self.chk.binder.get(var)
-            if val is None:
-                return var.type
-            else:
-                return val
+            return var.type
 
     def visit_call_expr(self, e: CallExpr) -> Type:
         """Type check a call expression."""
@@ -691,8 +686,6 @@ class ExpressionChecker:
         """Check the type of a single argument in a call."""
         if isinstance(caller_type, Void):
             messages.does_not_return_value(caller_type, context)
-        elif isinstance(caller_type, DeletedType):
-            messages.deleted_as_rvalue(caller_type, context)
         elif not is_subtype(caller_type, callee_type):
             messages.incompatible_argument(n, m, callee, original_caller_type,
                                            caller_kind, context)

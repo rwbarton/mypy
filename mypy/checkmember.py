@@ -110,9 +110,6 @@ def analyze_member_access(name: str, typ: Type, node: Context, is_lvalue: bool,
         return analyze_member_access(name, typ.upper_bound, node, is_lvalue, is_super,
                                      builtin_type, not_ready_callback, msg,
                                      report_type=report_type)
-    elif isinstance(typ, DeletedType):
-        msg.deleted_as_rvalue(typ, node)
-        return AnyType()
     elif isinstance(typ, TypeType):
         # Similar to FunctionLike + is_type_obj() above.
         item = None

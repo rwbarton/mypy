@@ -1,4 +1,4 @@
-from typing import (Dict, List, Set, Iterator)
+from typing import (Dict, List, Set, Iterator, Union, cast)
 from contextlib import contextmanager
 
 from mypy.types import Type, AnyType, PartialType
@@ -9,7 +9,22 @@ from mypy.join import join_simple
 from mypy.sametypes import is_same_type
 
 
-class Frame(Dict[Key, Type]):
+class Deleted:
+    """Frame entry representing a deleted variable."""
+
+    source = ''   # May be None; name that generated this value
+
+    def __init__(self, source: str, as_lvalue: bool = False) -> None:
+        self.source = source
+        self.as_lvalue = as_lvalue
+
+
+# What's known about an expression at a specific moment:
+# either its current type, or that it has been deleted.
+Status = Union[Type, Deleted]
+
+
+class Frame(Dict[Key, Status]):
     """A Frame represents a specific point in the execution of a program.
     It carries information about the current types of expressions at
     that point, arising either from assignments to those expressions
@@ -64,7 +79,7 @@ class ConditionalTypeBinder:
 
         # Maps expr.literal_hash] to get_declaration(expr)
         # for every expr stored in the binder
-        self.declarations = Frame()
+        self.declarations = {}  # type: Dict[Key, Type]
         # Set of other keys to invalidate if a key is changed, e.g. x -> {x.a, x[0]}
         # Whenever a new key (e.g. x.a.b) is added, we update this
         self.dependencies = {}  # type: Dict[Key, Set[Key]]
@@ -92,10 +107,10 @@ class ConditionalTypeBinder:
         self.options_on_return.append([])
         return f
 
-    def _push(self, key: Key, type: Type, index: int=-1) -> None:
+    def _push(self, key: Key, type: Status, index: int=-1) -> None:
         self.frames[index][key] = type
 
-    def _get(self, key: Key, index: int=-1) -> Type:
+    def _get(self, key: Key, index: int=-1) -> Status:
         if index < 0:
             index += len(self.frames)
         for i in range(index, -1, -1):
@@ -103,7 +118,7 @@ class ConditionalTypeBinder:
                 return self.frames[i][key]
         return None
 
-    def push(self, expr: Node, typ: Type) -> None:
+    def push(self, expr: Node, typ: Status) -> None:
         if not expr.literal:
             return
         key = expr.literal_hash
@@ -112,11 +127,22 @@ class ConditionalTypeBinder:
             self._add_dependencies(key)
         self._push(key, typ)
 
+    def not_deleted(self, expr: Node) -> None:
+        if not expr.literal:
+            return
+        if isinstance(self.get(expr), Deleted):
+            self.push(expr, self.get_declaration(expr))
+
     def unreachable(self) -> None:
         self.frames[-1].unreachable = True
 
-    def get(self, expr: Node) -> Type:
+    def get(self, expr: Node) -> Status:
         return self._get(expr.literal_hash)
+
+    def get_lvalue(self, expr: Node) -> Status:
+        if expr.literal:
+            return self.declarations.get(expr.literal_hash)
+        return None
 
     def is_unreachable(self) -> bool:
         # TODO: Copy the value of unreachable into new frames to avoid
@@ -148,21 +174,28 @@ class ConditionalTypeBinder:
         for key in keys:
             current_value = self._get(key)
             resulting_values = [f.get(key, current_value) for f in frames]
+
             if any(x is None for x in resulting_values):
                 # We didn't know anything about key before
                 # (current_value must be None), and we still don't
                 # know anything about key in at least one possible frame.
+                # It might be deleted though.
+                deleted_values = [x for x in resulting_values if isinstance(x, Deleted)]
+                if deleted_values:
+                    self._push(key, deleted_values[0])
+                    changed = True
                 continue
 
-            if isinstance(self.declarations.get(key), AnyType):
+            declaration = self.declarations.get(key)
+            if isinstance(declaration, AnyType):
                 type = resulting_values[0]
-                if not all(is_same_type(type, t) for t in resulting_values[1:]):
+                if not all(is_same_status(type, t) for t in resulting_values[1:]):
                     type = AnyType()
             else:
                 type = resulting_values[0]
                 for other in resulting_values[1:]:
-                    type = join_simple(self.declarations[key], type, other)
-            if not is_same_type(type, current_value):
+                    type = join_status(declaration, type, other)
+            if not is_same_status(type, current_value):
                 self._push(key, type)
                 changed = True
 
@@ -199,7 +232,7 @@ class ConditionalTypeBinder:
             return None
 
     def assign_type(self, expr: Node,
-                    type: Type,
+                    type: Status,
                     declared_type: Type,
                     restrict_any: bool = False) -> None:
         if not expr.literal:
@@ -210,7 +243,7 @@ class ConditionalTypeBinder:
             # Not sure why this happens.  It seems to mainly happen in
             # member initialization.
             return
-        if not is_subtype(type, declared_type):
+        if isinstance(type, Type) and not is_subtype(type, declared_type):
             # Pretty sure this is only happens when there's a type error.
 
             # Ideally this function wouldn't be called if the
@@ -247,13 +280,13 @@ class ConditionalTypeBinder:
         for dep in self.dependencies.get(expr.literal_hash, set()):
             self._cleanse_key(dep)
 
-    def most_recent_enclosing_type(self, expr: Node, type: Type) -> Type:
+    def most_recent_enclosing_type(self, expr: Node, type: Status) -> Status:
         if isinstance(type, AnyType):
             return self.get_declaration(expr)
         key = expr.literal_hash
-        enclosers = ([self.get_declaration(expr)] +
+        enclosers = ([cast(Status, self.get_declaration(expr))] +
                      [f[key] for f in self.frames
-                      if key in f and is_subtype(type, f[key])])
+                      if key in f])
         return enclosers[-1]
 
     def allow_jump(self, index: int) -> None:
@@ -335,3 +368,20 @@ class ConditionalTypeBinder:
         assert len(self.frames) == 1
         yield self.push_frame()
         self.pop_frame(True, 0)
+
+
+def join_status(declaration: Type, s: Status, t: Status) -> Status:
+    if isinstance(s, Deleted):
+        return s
+
+    if isinstance(t, Deleted):
+        return t
+
+    return join_simple(declaration, s, t)
+
+
+def is_same_status(s: Status, t: Status) -> bool:
+    if isinstance(s, Deleted) or isinstance(t, Deleted):
+        return isinstance(s, Deleted) and isinstance(t, Deleted) and s.as_lvalue == t.as_lvalue
+
+    return is_same_type(s, t)

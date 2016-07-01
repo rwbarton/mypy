@@ -656,7 +656,7 @@ e = 1
 try: pass
 except E1 as e: pass
 e = 1 # E: Assignment to variable 'e' outside except: block
-e = E1() # E: Assignment to variable 'e' outside except: block
+e = E1()
 [builtins fixtures/exception.py]
 
 [case testArbitraryExpressionAsExceptionType]
