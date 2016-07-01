@@ -1402,13 +1402,13 @@ class TypeChecker(NodeVisitor[Type]):
                 typ = self.accept(s.expr, return_type)
                 # Returning a value of type Any is always fine.
                 if isinstance(typ, AnyType):
-                    return None
+                    return
 
                 if isinstance(return_type, Void):
                     # Lambdas are allowed to have a Void return.
                     # Functions returning a value of type None are allowed to have a Void return.
                     if isinstance(self.function_stack[-1], FuncExpr) or isinstance(typ, NoneTyp):
-                        return None
+                        return
                     self.fail(messages.NO_RETURN_VALUE_EXPECTED, s)
                 else:
                     self.check_subtype(
@@ -1421,13 +1421,13 @@ class TypeChecker(NodeVisitor[Type]):
             else:
                 # Empty returns are valid in Generators with Any typed returns.
                 if (self.function_stack[-1].is_generator and isinstance(return_type, AnyType)):
-                    return None
+                    return
 
                 if isinstance(return_type, Void):
-                    return None
+                    return
 
                 if isinstance(return_type, AnyType):
-                    return None
+                    return
 
                 if self.typing_mode_full():
                     self.fail(messages.RETURN_VALUE_EXPECTED, s)
