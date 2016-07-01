@@ -5,7 +5,7 @@ from typing import cast, List
 from mypy.types import (
     Type, AnyType, NoneTyp, Void, TypeVisitor, Instance, UnboundType,
     ErrorType, TypeVarType, CallableType, TupleType, ErasedType, TypeList,
-    UnionType, FunctionLike, Overloaded, PartialType, DeletedType,
+    UnionType, FunctionLike, Overloaded, PartialType,
     UninhabitedType, TypeType
 )
 from mypy.maptype import map_instance_to_supertype
@@ -123,12 +123,6 @@ class TypeJoinVisitor(TypeVisitor[Type]):
                 return self.default(self.s)
 
     def visit_uninhabited_type(self, t: UninhabitedType) -> Type:
-        if not isinstance(self.s, Void):
-            return self.s
-        else:
-            return self.default(self.s)
-
-    def visit_deleted_type(self, t: DeletedType) -> Type:
         if not isinstance(self.s, Void):
             return self.s
         else:

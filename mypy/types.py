@@ -353,31 +353,6 @@ class ErasedType(Type):
         return visitor.visit_erased_type(self)
 
 
-class DeletedType(Type):
-    """Type of deleted variables.
-
-    These can be used as lvalues but not rvalues.
-    """
-
-    source = ''   # May be None; name that generated this value
-
-    def __init__(self, source: str = None, line: int = -1) -> None:
-        self.source = source
-        super().__init__(line)
-
-    def accept(self, visitor: 'TypeVisitor[T]') -> T:
-        return visitor.visit_deleted_type(self)
-
-    def serialize(self) -> JsonDict:
-        return {'.class': 'DeletedType',
-                'source': self.source}
-
-    @classmethod
-    def deserialize(self, data: JsonDict) -> 'DeletedType':
-        assert data['.class'] == 'DeletedType'
-        return DeletedType(data['source'])
-
-
 class Instance(Type):
     """An instance type of form C[T1, ..., Tn].
 
@@ -995,10 +970,6 @@ class TypeVisitor(Generic[T]):
         raise self._notimplemented_helper('erased_type')
 
     @abstractmethod
-    def visit_deleted_type(self, t: DeletedType) -> T:
-        pass
-
-    @abstractmethod
     def visit_type_var(self, t: TypeVarType) -> T:
         pass
 
@@ -1065,9 +1036,6 @@ class TypeTranslator(TypeVisitor[Type]):
         return t
 
     def visit_erased_type(self, t: ErasedType) -> Type:
-        return t
-
-    def visit_deleted_type(self, t: DeletedType) -> Type:
         return t
 
     def visit_instance(self, t: Instance) -> Type:
@@ -1307,9 +1275,6 @@ class TypeQuery(TypeVisitor[bool]):
         return self.default
 
     def visit_erased_type(self, t: ErasedType) -> bool:
-        return self.default
-
-    def visit_deleted_type(self, t: DeletedType) -> bool:
         return self.default
 
     def visit_type_var(self, t: TypeVarType) -> bool:

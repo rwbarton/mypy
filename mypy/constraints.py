@@ -4,7 +4,7 @@ from typing import List, Optional, cast
 
 from mypy.types import (
     CallableType, Type, TypeVisitor, UnboundType, AnyType, Void, NoneTyp, TypeVarType,
-    Instance, TupleType, UnionType, Overloaded, ErasedType, PartialType, DeletedType,
+    Instance, TupleType, UnionType, Overloaded, ErasedType, PartialType,
     UninhabitedType, TypeType, TypeVarId, is_named_instance
 )
 from mypy.maptype import map_instance_to_supertype
@@ -226,9 +226,6 @@ class ConstraintBuilderVisitor(TypeVisitor[List[Constraint]]):
         return []
 
     def visit_erased_type(self, template: ErasedType) -> List[Constraint]:
-        return []
-
-    def visit_deleted_type(self, template: DeletedType) -> List[Constraint]:
         return []
 
     # Errors

@@ -4,7 +4,7 @@ from mypy.join import is_similar_callables, combine_similar_callables
 from mypy.types import (
     Type, AnyType, TypeVisitor, UnboundType, Void, ErrorType, NoneTyp, TypeVarType,
     Instance, CallableType, TupleType, ErasedType, TypeList, UnionType, PartialType,
-    DeletedType, UninhabitedType, TypeType
+    UninhabitedType, TypeType
 )
 from mypy.subtypes import is_subtype
 from mypy.nodes import TypeInfo
@@ -170,20 +170,6 @@ class TypeMeetVisitor(TypeVisitor[Type]):
     def visit_uninhabited_type(self, t: UninhabitedType) -> Type:
         if not isinstance(self.s, Void) and not isinstance(self.s, ErrorType):
             return t
-        else:
-            return ErrorType()
-
-    def visit_deleted_type(self, t: DeletedType) -> Type:
-        if not isinstance(self.s, Void) and not isinstance(self.s, ErrorType):
-            if isinstance(self.s, NoneTyp):
-                if experiments.STRICT_OPTIONAL:
-                    return t
-                else:
-                    return self.s
-            elif isinstance(self.s, UninhabitedType):
-                return self.s
-            else:
-                return t
         else:
             return ErrorType()
 

@@ -32,7 +32,7 @@ from mypy import nodes
 from mypy.types import (
     Type, AnyType, CallableType, Void, FunctionLike, Overloaded, TupleType,
     Instance, NoneTyp, ErrorType, strip_type,
-    UnionType, TypeVarId, TypeVarType, PartialType, DeletedType, UninhabitedType
+    UnionType, TypeVarId, TypeVarType, PartialType, UninhabitedType
 )
 from mypy.sametypes import is_same_type
 from mypy.messages import MessageBuilder

@@ -3,7 +3,7 @@ from typing import Sequence
 from mypy.types import (
     Type, UnboundType, ErrorType, AnyType, NoneTyp, Void, TupleType, UnionType, CallableType,
     TypeVarType, Instance, TypeVisitor, ErasedType, TypeList, Overloaded, PartialType,
-    DeletedType, UninhabitedType, TypeType
+    UninhabitedType, TypeType
 )
 
 
@@ -79,9 +79,6 @@ class SameTypeVisitor(TypeVisitor[bool]):
         # to think that an ErasedType will end up being the same as
         # any other type, even another ErasedType.
         return False
-
-    def visit_deleted_type(self, left: DeletedType) -> bool:
-        return isinstance(self.right, DeletedType)
 
     def visit_instance(self, left: Instance) -> bool:
         return (isinstance(self.right, Instance) and

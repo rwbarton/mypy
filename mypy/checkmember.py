@@ -4,8 +4,7 @@ from typing import cast, Callable, List, Dict, Optional
 
 from mypy.types import (
     Type, Instance, AnyType, TupleType, CallableType, FunctionLike, TypeVarId, TypeVarDef,
-    Overloaded, TypeVarType, TypeTranslator, UnionType, PartialType,
-    DeletedType, NoneTyp, TypeType
+    Overloaded, TypeVarType, TypeTranslator, UnionType, PartialType, NoneTyp, TypeType
 )
 from mypy.nodes import TypeInfo, FuncBase, Var, FuncDef, SymbolNode, Context
 from mypy.nodes import ARG_POS, ARG_STAR, ARG_STAR2, function_type, Decorator, OverloadedFuncDef
